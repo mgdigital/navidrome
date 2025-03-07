@@ -21,6 +21,7 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/metadata"
+	"github.com/navidrome/navidrome/scanner/metafiles"
 	"github.com/navidrome/navidrome/utils"
 	"github.com/navidrome/navidrome/utils/pl"
 	"github.com/navidrome/navidrome/utils/slice"
@@ -209,7 +210,7 @@ func (p *phaseFolders) processFolder(entry *folderEntry) (*folderEntry, error) {
 	for afPath, af := range entry.audioFiles {
 		fullPath := path.Join(entry.path, afPath)
 		dbTrack, foundInDB := dbTracks[fullPath]
-		if !foundInDB || p.state.fullScan {
+		if !foundInDB || p.state.fullScan || entry.metaUpdatedAt.After(dbTrack.UpdatedAt) {
 			filesToImport[fullPath] = dbTrack
 		} else {
 			info, err := af.Info()
@@ -218,7 +219,7 @@ func (p *phaseFolders) processFolder(entry *folderEntry) (*folderEntry, error) {
 				p.state.sendWarning(fmt.Sprintf("Error getting file info for %s/%s: %v", entry.path, af.Name(), err))
 				return entry, nil
 			}
-			if info.ModTime().After(dbTrack.UpdatedAt) || dbTrack.Missing {
+			if dbTrack.Missing || info.ModTime().After(dbTrack.UpdatedAt) || entry.metaUpdatedAt.After(dbTrack.UpdatedAt) {
 				filesToImport[fullPath] = dbTrack
 			}
 		}
@@ -251,6 +252,7 @@ const filesBatchSize = 200
 func (p *phaseFolders) loadTagsFromFiles(entry *folderEntry, toImport map[string]*model.MediaFile) error {
 	tracks := make([]model.MediaFile, 0, len(toImport))
 	uniqueTags := make(map[string]model.Tag, len(toImport))
+	tagsTransformer := metafiles.ReadFiles(entry.job.lib.Path, entry.metaFilesPaths())
 	for chunk := range slice.CollectChunks(maps.Keys(toImport), filesBatchSize) {
 		allInfo, err := entry.job.fs.ReadTags(chunk...)
 		if err != nil {
@@ -258,6 +260,7 @@ func (p *phaseFolders) loadTagsFromFiles(entry *folderEntry, toImport map[string
 			return err
 		}
 		for filePath, info := range allInfo {
+			info.Tags = tagsTransformer.Transform(filePath, info.Tags)
 			md := metadata.New(filePath, info)
 			track := md.ToMediaFile(entry.job.lib.ID, entry.id)
 			tracks = append(tracks, track)

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -22,6 +23,7 @@ import (
 
 type folderEntry struct {
 	job             *scanJob
+	parent          *folderEntry
 	elapsed         chrono.Meter
 	path            string    // Full path
 	id              string    // DB ID
@@ -29,9 +31,11 @@ type folderEntry struct {
 	updTime         time.Time // from DB
 	audioFiles      map[string]fs.DirEntry
 	imageFiles      map[string]fs.DirEntry
+	metaFiles       map[string]fs.DirEntry
 	numPlaylists    int
 	numSubFolders   int
 	imagesUpdatedAt time.Time
+	metaUpdatedAt   time.Time
 	tracks          model.MediaFiles
 	albums          model.Albums
 	albumIDMap      map[string]string
@@ -48,6 +52,24 @@ func (f *folderEntry) isNew() bool {
 	return f.updTime.IsZero()
 }
 
+func (f *folderEntry) metaFilesPaths() []string {
+	var paths []string
+	curr := f
+	for {
+		if curr == nil {
+			break
+		}
+		var thisPaths []string
+		for name := range curr.metaFiles {
+			thisPaths = append(thisPaths, filepath.Join(curr.path, name))
+		}
+		slices.Sort(thisPaths)
+		paths = append(thisPaths, paths...)
+		curr = curr.parent
+	}
+	return paths
+}
+
 func (f *folderEntry) toFolder() *model.Folder {
 	folder := model.NewFolder(f.job.lib, f.path)
 	folder.NumAudioFiles = len(f.audioFiles)
@@ -59,16 +81,22 @@ func (f *folderEntry) toFolder() *model.Folder {
 	return folder
 }
 
-func newFolderEntry(job *scanJob, path string) *folderEntry {
+func newFolderEntry(job *scanJob, parent *folderEntry, path string) *folderEntry {
 	id := model.FolderID(job.lib, path)
+	var metaUpdatedAt time.Time
+	if parent != nil {
+		metaUpdatedAt = parent.metaUpdatedAt
+	}
 	f := &folderEntry{
-		id:         id,
-		job:        job,
-		path:       path,
-		audioFiles: make(map[string]fs.DirEntry),
-		imageFiles: make(map[string]fs.DirEntry),
-		albumIDMap: make(map[string]string),
-		updTime:    job.popLastUpdate(id),
+		id:            id,
+		job:           job,
+		path:          path,
+		audioFiles:    make(map[string]fs.DirEntry),
+		imageFiles:    make(map[string]fs.DirEntry),
+		metaFiles:     make(map[string]fs.DirEntry),
+		metaUpdatedAt: metaUpdatedAt,
+		albumIDMap:    make(map[string]string),
+		updTime:       job.popLastUpdate(id),
 	}
 	f.elapsed.Start()
 	return f
@@ -78,14 +106,14 @@ func (f *folderEntry) isOutdated() bool {
 	if f.job.lib.FullScanInProgress {
 		return f.updTime.Before(f.job.lib.LastScanStartedAt)
 	}
-	return f.updTime.Before(f.modTime)
+	return f.updTime.Before(f.modTime) || f.updTime.Before(f.metaUpdatedAt)
 }
 
 func walkDirTree(ctx context.Context, job *scanJob) (<-chan *folderEntry, error) {
 	results := make(chan *folderEntry)
 	go func() {
 		defer close(results)
-		err := walkFolder(ctx, job, ".", nil, results)
+		err := walkFolder(ctx, job, nil, ".", nil, results)
 		if err != nil {
 			log.Error(ctx, "Scanner: There were errors reading directories from filesystem", "path", job.lib.Path, err)
 			return
@@ -95,16 +123,16 @@ func walkDirTree(ctx context.Context, job *scanJob) (<-chan *folderEntry, error)
 	return results, nil
 }
 
-func walkFolder(ctx context.Context, job *scanJob, currentFolder string, ignorePatterns []string, results chan<- *folderEntry) error {
+func walkFolder(ctx context.Context, job *scanJob, parent *folderEntry, currentFolder string, ignorePatterns []string, results chan<- *folderEntry) error {
 	ignorePatterns = loadIgnoredPatterns(ctx, job.fs, currentFolder, ignorePatterns)
 
-	folder, children, err := loadDir(ctx, job, currentFolder, ignorePatterns)
+	folder, children, err := loadDir(ctx, job, parent, currentFolder, ignorePatterns)
 	if err != nil {
 		log.Warn(ctx, "Scanner: Error loading dir. Skipping", "path", currentFolder, err)
 		return nil
 	}
 	for _, c := range children {
-		err := walkFolder(ctx, job, c, ignorePatterns, results)
+		err := walkFolder(ctx, job, folder, c, ignorePatterns, results)
 		if err != nil {
 			return err
 		}
@@ -112,7 +140,7 @@ func walkFolder(ctx context.Context, job *scanJob, currentFolder string, ignoreP
 
 	dir := path.Clean(currentFolder)
 	log.Trace(ctx, "Scanner: Found directory", " path", dir, "audioFiles", maps.Keys(folder.audioFiles),
-		"images", maps.Keys(folder.imageFiles), "playlists", folder.numPlaylists, "imagesUpdatedAt", folder.imagesUpdatedAt,
+		"images", maps.Keys(folder.imageFiles), "metaFiles", maps.Keys(folder.metaFiles), "playlists", folder.numPlaylists, "imagesUpdatedAt", folder.imagesUpdatedAt,
 		"updTime", folder.updTime, "modTime", folder.modTime, "numChildren", len(children))
 	folder.path = dir
 	results <- folder
@@ -153,8 +181,8 @@ func loadIgnoredPatterns(ctx context.Context, fsys fs.FS, currentFolder string, 
 	return append(combinedPatterns, newPatterns...)
 }
 
-func loadDir(ctx context.Context, job *scanJob, dirPath string, ignorePatterns []string) (folder *folderEntry, children []string, err error) {
-	folder = newFolderEntry(job, dirPath)
+func loadDir(ctx context.Context, job *scanJob, parent *folderEntry, dirPath string, ignorePatterns []string) (folder *folderEntry, children []string, err error) {
+	folder = newFolderEntry(job, parent, dirPath)
 
 	dirInfo, err := fs.Stat(job.fs, dirPath)
 	if err != nil {
@@ -216,6 +244,11 @@ func loadDir(ctx context.Context, job *scanJob, dirPath string, ignorePatterns [
 			case model.IsImageFile(entry.Name()):
 				folder.imageFiles[entry.Name()] = entry
 				folder.imagesUpdatedAt = utils.TimeNewest(folder.imagesUpdatedAt, fileInfo.ModTime(), folder.modTime)
+			case model.IsMetaFile(entry.Name()):
+				folder.metaFiles[entry.Name()] = entry
+				if fileInfo.ModTime().After(folder.metaUpdatedAt) {
+					folder.metaUpdatedAt = fileInfo.ModTime()
+				}
 			}
 		}
 	}
