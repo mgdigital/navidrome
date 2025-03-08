@@ -3,6 +3,7 @@ package metafiles
 import (
 	"testing"
 
+	"github.com/navidrome/navidrome/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,8 +80,8 @@ func TestParsePatternMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, TagsTransformers{
 		PathMatchTagsTransformer{
-			BasePath: "test",
-			Pattern:  "**/*.flac",
+			BaseDir: "test",
+			Pattern: "**/*.flac",
 			Transformer: TagsTransformers{
 				TagKeyValues{
 					Key:    "album",
@@ -93,8 +94,8 @@ func TestParsePatternMap(t *testing.T) {
 			},
 		},
 		PathMatchTagsTransformer{
-			BasePath: "test",
-			Pattern:  "CD1/*.flac",
+			BaseDir: "test",
+			Pattern: "CD1/*.flac",
 			Transformer: TagsTransformers{
 				TagKeyValues{
 					Key:    "discnumber",
@@ -103,4 +104,26 @@ func TestParsePatternMap(t *testing.T) {
 			},
 		},
 	}, result)
+}
+
+func TestParseExpression(t *testing.T) {
+	t.Parallel()
+
+	result, err := parseTagsFile("test", []byte(`
+testkey: testvalue
+testExpr:
+  $: values.map(v, v + "!")
+testNonExistentKeyExpr:
+  $: values.map(v, v + "!")
+`))
+	require.NoError(t, err)
+
+	transformed := result.Transform("test/subdir/tags.yml", model.RawTags{
+		"TESTEXPR": []string{"test1", "test2"},
+	})
+	assert.Equal(t, model.RawTags{
+		"testkey":                []string{"testvalue"},
+		"testExpr":               []string{"test1!", "test2!"},
+		"testNonExistentKeyExpr": []string{},
+	}, transformed)
 }
