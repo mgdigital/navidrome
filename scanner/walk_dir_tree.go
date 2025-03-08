@@ -89,6 +89,7 @@ func newFolderEntry(job *scanJob, parent *folderEntry, path string) *folderEntry
 	}
 	f := &folderEntry{
 		id:            id,
+		parent:        parent,
 		job:           job,
 		path:          path,
 		audioFiles:    make(map[string]fs.DirEntry),
