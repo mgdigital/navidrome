@@ -128,7 +128,7 @@ bool:
 `))
 	require.NoError(t, err)
 
-	transformed := result.Transform("test/subdir/tags.yml", model.RawTags{
+	transformed := result.Transform("test/subdir/file.flac", model.RawTags{
 		"TESTEXPR": []string{"test1", "test2"},
 		"TITLE":    []string{"artist1 & artist2 - title"},
 	})
@@ -141,5 +141,26 @@ bool:
 		"discnumber":             []string{"2"},
 		"float":                  []string{"0.02"},
 		"bool":                   []string{"1"},
+	}, transformed)
+}
+
+func TestParsePathBasedExpression(t *testing.T) {
+	t.Parallel()
+
+	result, err := parseTagsFile("/Base Dir", []byte(`
+artist:
+  $: relativePath.split("/")[0]
+album:
+  $: relativePath.split("/")[1]
+`))
+	require.NoError(t, err)
+
+	transformed := result.Transform("/Base Dir/Artist Name/Album Name/tags.yml", model.RawTags{
+		"TITLE": []string{"The Song Title"},
+	})
+	assert.Equal(t, model.RawTags{
+		"artist": []string{"Artist Name"},
+		"album":  []string{"Album Name"},
+		"TITLE":  []string{"The Song Title"},
 	}, transformed)
 }
