@@ -116,21 +116,30 @@ testExpr:
 testNonExistentKeyExpr:
   $: values.map(v, v + "!")
 artist:
-  $: tags["title"][0].split(" - ")[0]
+  $: tags["title"][0].split(" - ")[0].split(" & ")
 title:
   $: value.split(" - ")[1]
+discnumber:
+  $: 1 + 1
+float:
+  $: 0.01 + 0.01
+bool:
+  $: "true"
 `))
 	require.NoError(t, err)
 
 	transformed := result.Transform("test/subdir/tags.yml", model.RawTags{
 		"TESTEXPR": []string{"test1", "test2"},
-		"TITLE":    []string{"artist - title"},
+		"TITLE":    []string{"artist1 & artist2 - title"},
 	})
 	assert.Equal(t, model.RawTags{
 		"testkey":                []string{"testvalue"},
 		"testExpr":               []string{"test1!", "test2!"},
 		"testNonExistentKeyExpr": []string{},
-		"artist":                 []string{"artist"},
+		"artist":                 []string{"artist1", "artist2"},
 		"title":                  []string{"title"},
+		"discnumber":             []string{"2"},
+		"float":                  []string{"0.02"},
+		"bool":                   []string{"1"},
 	}, transformed)
 }

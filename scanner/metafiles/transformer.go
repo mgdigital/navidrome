@@ -3,6 +3,7 @@ package metafiles
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -143,14 +144,33 @@ func extractAllTagValues(tags model.RawTags) map[string][]string {
 
 func resolveCelValue(value any) []string {
 	switch typed := value.(type) {
+	case ref.Val:
+		return resolveCelValue(typed.Value())
 	case []ref.Val:
 		strValues := make([]string, 0, len(typed))
 		for _, val := range typed {
 			strValues = append(strValues, resolveCelValue(val.Value())...)
 		}
 		return strValues
+	case []string:
+		return typed
 	case string:
 		return []string{typed}
+	case []any:
+		strValues := make([]string, 0, len(typed))
+		for _, val := range typed {
+			strValues = append(strValues, resolveCelValue(val)...)
+		}
+		return strValues
+	case int64:
+		return []string{strconv.Itoa(int(typed))}
+	case float64:
+		return []string{strconv.FormatFloat(typed, 'f', -1, 64)}
+	case bool:
+		if typed {
+			return []string{"1"}
+		}
+		return []string{"0"}
 	default:
 		if str, ok := value.(string); ok {
 			return []string{str}
