@@ -152,15 +152,18 @@ artist:
   $: relativePath.split("/")[0]
 album:
   $: relativePath.split("/")[1]
+tracknumber:
+  $: relativePath.split("/")[2].split(". ")[0]
+title:
+  $: relativePath.split("/")[2].split(". ")[1].split(".flac")[0]
 `))
 	require.NoError(t, err)
 
-	transformed := result.Transform("/Base Dir/Artist Name/Album Name/tags.yml", model.RawTags{
-		"TITLE": []string{"The Song Title"},
-	})
+	transformed := result.Transform("/Base Dir/Artist Name/Album Name/1. Track Title.flac", model.RawTags{})
 	assert.Equal(t, model.RawTags{
-		"artist": []string{"Artist Name"},
-		"album":  []string{"Album Name"},
-		"TITLE":  []string{"The Song Title"},
+		"artist":      []string{"Artist Name"},
+		"album":       []string{"Album Name"},
+		"tracknumber": []string{"1"},
+		"title":       []string{"Track Title"},
 	}, transformed)
 }
