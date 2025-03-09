@@ -2,6 +2,7 @@ package metafiles
 
 import (
 	"cmp"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,6 +89,7 @@ func (t TagExpression) Transform(filePath string, tags model.RawTags) model.RawT
 		"fullPath":     filePath,
 		"relativePath": filePath[len(t.BaseDir)+1:],
 		"baseDir":      t.BaseDir,
+		"filename":     filepath.Base(filePath),
 	})
 	if err != nil {
 		log.Error("error evaluating tag expression", "error", err)

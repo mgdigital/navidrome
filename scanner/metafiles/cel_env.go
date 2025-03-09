@@ -26,5 +26,6 @@ func newCelEnv() (*cel.Env, error) {
 		cel.Variable("fullPath", cel.StringType),
 		cel.Variable("relativePath", cel.StringType),
 		cel.Variable("baseDir", cel.StringType),
+		cel.Variable("filename", cel.StringType),
 	)
 }
