@@ -12,7 +12,13 @@ func ReadFiles(baseDir string, filePaths []string) TagsTransformer {
 	var tags TagsTransformers
 	for _, filePath := range filePaths {
 		if transform, err := readFile(baseDir, filePath); err != nil {
-			log.Error(fmt.Errorf(`could not read tags file "%s": %w`, filePath, err))
+			log.Error(err)
+			return TagKeyValues{
+				Key: "comment",
+				Values: []string{
+					err.Error(),
+				},
+			}
 		} else {
 			tags = append(tags, transform)
 		}
