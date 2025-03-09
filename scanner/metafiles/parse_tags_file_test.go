@@ -153,9 +153,9 @@ artist:
 album:
   $: relativePath.split("/")[1]
 tracknumber:
-  $: relativePath.split("/")[2].split(". ")[0]
+  $: filename.split(". ")[0]
 title:
-  $: relativePath.split("/")[2].split(". ")[1].split(".flac")[0]
+  $: filename.split(". ")[1].split(".flac")[0]
 `))
 	require.NoError(t, err)
 
